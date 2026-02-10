@@ -69,7 +69,7 @@ jobs:
             echo "✅ Server is running successfully!"
             echo ""
             echo "📊 Server Info:"
-            curl -s http://localhost:8080/api/v1/info | jq '.'
+            curl -s http://localhost:8080/api/v1/info
             echo ""
             echo "🎉 Deployment completed!"
           else
