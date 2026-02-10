@@ -50,7 +50,7 @@ func helloHandler(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"message": fmt.Sprintf("Hello, %s!", name),
-		"version": "1.0.0",
+		"version": "1.0.1",
 	})
 }
 
@@ -58,8 +58,8 @@ func helloHandler(c echo.Context) error {
 func infoHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"name":        "Go Echo Web Server",
-		"version":     "1.0.0",
-		"description": "GitHub Actions + AWS/GCP 배포 테스트",
+		"version":     "1.0.1",
+		"description": "GitHub Actions + AWS EC2 자동 배포 테스트",
 		"endpoints": []string{
 			"GET /",
 			"GET /api/v1/hello",
