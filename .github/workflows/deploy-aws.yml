@@ -30,21 +30,6 @@ jobs:
         go mod tidy
         GOOS=linux GOARCH=amd64 go build -v -o server main.go
 
-    - name: Deploy to EC2 via SSH
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.EC2_SSH_KEY }}
-        script: |
-          # 배포 디렉토리로 이동
-          cd /home/ubuntu/web
-
-          # 기존 프로세스 종료
-          echo "Stopping existing server..."
-          pkill -f './server' || true
-          sleep 2
-
     - name: Upload binary to EC2
       uses: appleboy/scp-action@v0.1.7
       with:
@@ -54,29 +39,41 @@ jobs:
         source: "server"
         target: "/home/ubuntu/web/"
 
-    - name: Start server on EC2
+    - name: Deploy and restart server
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
+          set -e
           cd /home/ubuntu/web
           chmod +x server
 
+          # 기존 프로세스 종료
+          echo "🛑 Stopping existing server..."
+          pkill -f './server' || true
+          sleep 2
+
           # 새 서버 시작 (백그라운드)
-          echo "Starting new server..."
+          echo "🚀 Starting new server..."
           nohup ./server > server.log 2>&1 &
 
           # 서버 시작 대기
           sleep 5
 
           # 헬스 체크
+          echo "🔍 Checking server health..."
           if curl -f http://localhost:8080/ > /dev/null 2>&1; then
-            echo "✅ Server is running!"
-            curl http://localhost:8080/api/v1/info
+            echo "✅ Server is running successfully!"
+            echo ""
+            echo "📊 Server Info:"
+            curl -s http://localhost:8080/api/v1/info | jq '.'
+            echo ""
+            echo "🎉 Deployment completed!"
           else
             echo "❌ Server failed to start!"
+            echo "📝 Last 20 lines of log:"
             tail -n 20 server.log
             exit 1
           fi
