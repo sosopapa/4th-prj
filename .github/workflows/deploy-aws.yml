@@ -1,0 +1,67 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+jobs:
+  deploy-to-s3:
+    name: Deploy Binary to S3
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Build binary
+      run: |
+        GOOS=linux GOARCH=amd64 go build -v -o server-linux-amd64 main.go
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ap-northeast-2
+
+    - name: Upload to S3
+      run: |
+        aws s3 cp server-linux-amd64 s3://${{ secrets.AWS_S3_BUCKET }}/releases/server-linux-amd64-${{ github.sha }}
+        aws s3 cp server-linux-amd64 s3://${{ secrets.AWS_S3_BUCKET }}/releases/server-linux-amd64-latest
+
+  deploy-to-ec2:
+    name: Deploy to EC2
+    needs: deploy-to-s3
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Deploy to EC2 via SSH
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          # 바이너리 다운로드
+          aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/releases/server-linux-amd64-latest ~/server
+          chmod +x ~/server
+
+          # 기존 프로세스 종료
+          pkill -f server || true
+
+          # 새 서버 시작 (백그라운드)
+          nohup ~/server > ~/server.log 2>&1 &
+
+          # 서버 상태 확인
+          sleep 3
+          curl -f http://localhost:8080/ || exit 1
+          echo "Deployment successful!"

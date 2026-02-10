@@ -1,0 +1,75 @@
+name: Deploy to GCP
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+jobs:
+  deploy-to-cloud-storage:
+    name: Deploy Binary to Cloud Storage
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Build binary
+      run: |
+        GOOS=linux GOARCH=amd64 go build -v -o server-linux-amd64 main.go
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Upload to Cloud Storage
+      run: |
+        gsutil cp server-linux-amd64 gs://${{ secrets.GCS_BUCKET }}/releases/server-linux-amd64-${{ github.sha }}
+        gsutil cp server-linux-amd64 gs://${{ secrets.GCS_BUCKET }}/releases/server-linux-amd64-latest
+
+  deploy-to-compute-engine:
+    name: Deploy to Compute Engine
+    needs: deploy-to-cloud-storage
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Deploy to Compute Engine
+      run: |
+        gcloud compute ssh ${{ secrets.GCE_INSTANCE_NAME }} \
+          --zone=${{ secrets.GCE_ZONE }} \
+          --command="
+            # 바이너리 다운로드
+            gsutil cp gs://${{ secrets.GCS_BUCKET }}/releases/server-linux-amd64-latest ~/server
+            chmod +x ~/server
+
+            # 기존 프로세스 종료
+            pkill -f server || true
+
+            # 새 서버 시작 (백그라운드)
+            nohup ~/server > ~/server.log 2>&1 &
+
+            # 서버 상태 확인
+            sleep 3
+            curl -f http://localhost:8080/ || exit 1
+            echo 'Deployment successful!'
+          "
