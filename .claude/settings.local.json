@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git commit:*)",
       "Bash(git branch:*)",
-      "Bash(export PATH=$PATH:\"/c/Program Files/GitHub CLI\")"
+      "Bash(export PATH=$PATH:\"/c/Program Files/GitHub CLI\")",
+      "Bash(export PATH=$PATH:\"/c/Program Files/GitHub CLI\":\"/c/Program Files/Git/cmd\")"
     ]
   }
 }
