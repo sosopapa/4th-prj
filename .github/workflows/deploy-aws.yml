@@ -1,4 +1,4 @@
-name: Deploy to AWS
+name: Deploy to EC2
 
 on:
   push:
@@ -6,11 +6,13 @@ on:
     paths-ignore:
       - '**.md'
       - 'docs/**'
+      - '*.sh'
+      - '*.ps1'
   workflow_dispatch:
 
 jobs:
-  deploy-to-s3:
-    name: Deploy Binary to S3
+  deploy-to-ec2:
+    name: Deploy to EC2
     runs-on: ubuntu-latest
 
     steps:
@@ -22,46 +24,59 @@ jobs:
       with:
         go-version: '1.21'
 
-    - name: Build binary
+    - name: Build binary for Linux
       run: |
-        GOOS=linux GOARCH=amd64 go build -v -o server-linux-amd64 main.go
+        go mod download
+        go mod tidy
+        GOOS=linux GOARCH=amd64 go build -v -o server main.go
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ap-northeast-2
-
-    - name: Upload to S3
-      run: |
-        aws s3 cp server-linux-amd64 s3://${{ secrets.AWS_S3_BUCKET }}/releases/server-linux-amd64-${{ github.sha }}
-        aws s3 cp server-linux-amd64 s3://${{ secrets.AWS_S3_BUCKET }}/releases/server-linux-amd64-latest
-
-  deploy-to-ec2:
-    name: Deploy to EC2
-    needs: deploy-to-s3
-    runs-on: ubuntu-latest
-
-    steps:
     - name: Deploy to EC2 via SSH
-      uses: appleboy/ssh-action@v1.0.0
+      uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
-          # 바이너리 다운로드
-          aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/releases/server-linux-amd64-latest ~/server
-          chmod +x ~/server
+          # 배포 디렉토리로 이동
+          cd /home/ubuntu/web
 
           # 기존 프로세스 종료
-          pkill -f server || true
+          echo "Stopping existing server..."
+          pkill -f './server' || true
+          sleep 2
+
+    - name: Upload binary to EC2
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        source: "server"
+        target: "/home/ubuntu/web/"
+
+    - name: Start server on EC2
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          cd /home/ubuntu/web
+          chmod +x server
 
           # 새 서버 시작 (백그라운드)
-          nohup ~/server > ~/server.log 2>&1 &
+          echo "Starting new server..."
+          nohup ./server > server.log 2>&1 &
 
-          # 서버 상태 확인
-          sleep 3
-          curl -f http://localhost:8080/ || exit 1
-          echo "Deployment successful!"
+          # 서버 시작 대기
+          sleep 5
+
+          # 헬스 체크
+          if curl -f http://localhost:8080/ > /dev/null 2>&1; then
+            echo "✅ Server is running!"
+            curl http://localhost:8080/api/v1/info
+          else
+            echo "❌ Server failed to start!"
+            tail -n 20 server.log
+            exit 1
+          fi
