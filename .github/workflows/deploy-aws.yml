@@ -46,7 +46,6 @@ jobs:
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
-          set -e
           cd /home/ubuntu/web
           chmod +x server
 
@@ -54,6 +53,8 @@ jobs:
           echo "🛑 Stopping existing server..."
           pkill -f './server' || true
           sleep 2
+
+          set -e
 
           # 새 서버 시작 (백그라운드)
           echo "🚀 Starting new server..."
